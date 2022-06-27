@@ -70,4 +70,34 @@ class PlaygroundUtilTest extends AnyFunSuite with SharedSparkContext {
     assert(result.schema === expected.schema)
     assert(result.collect() === expected.collect())
   }
+
+  test("semi vs inner") {
+    val dictWithDuplicates = spark.createDataFrame(
+      sc.parallelize(
+        Seq(
+          Row("a"),
+          Row("b"),
+          Row("b"),
+        )
+      ),
+      new StructType()
+        .add(StructField("index", StringType))
+    )
+    val result = main.join(dictWithDuplicates, Seq("index"), "inner").orderBy("index")
+    val expected = spark.createDataFrame(
+      sc.parallelize(
+        Seq(
+          Row("a", "Berlin"),
+          Row("b", "Madrid"),
+          Row("b", "Madrid"),
+        )
+      ),
+      new StructType()
+        .add(StructField("index", StringType))
+        .add(StructField("city", StringType))
+    ).orderBy("index")
+
+    assert(result.schema === expected.schema)
+    assert(result.collect() === expected.collect())
+  }
 }
