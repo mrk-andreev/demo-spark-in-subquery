@@ -1,103 +1,55 @@
 package com.example
 
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.scalatest.funsuite.AnyFunSuite
 
+
+case class Data(index: String, city: String)
+
+case class Dict(index: String)
+
 class PlaygroundUtilTest extends AnyFunSuite with SharedSparkContext {
-  var main: DataFrame = _
-  var dict: DataFrame = _
+  var main: Dataset[Data] = _
+  var dict: Dataset[Dict] = _
+
+  def createDataDataset(values: Seq[Data]): Dataset[Data] = {
+    spark.createDataset(values)(ExpressionEncoder[Data]())
+  }
+
+  def createDictDataset(values: Seq[Dict]): Dataset[Dict] = {
+    spark.createDataset(values)(ExpressionEncoder[Dict]())
+  }
 
   override def beforeAll(): Unit = {
     super.beforeAll()
 
-    main = spark.createDataFrame(
-      sc.parallelize(
-        Seq(
-          Row("a", "Berlin"),
-          Row("b", "Madrid"),
-          Row("c", "Rome"),
-        )
-      ),
-      new StructType()
-        .add(StructField("index", StringType))
-        .add(StructField("city", StringType))
-    )
-
-    dict = spark.createDataFrame(
-      sc.parallelize(
-        Seq(
-          Row("a"),
-          Row("b"),
-        )
-      ),
-      new StructType()
-        .add(StructField("index", StringType))
-    )
+    main = createDataDataset(Seq(Data("a", "Berlin"), Data("b", "Madrid"), Data("c", "Rome")))
+    dict = createDictDataset(Seq(Dict("a"), Dict("b")))
   }
 
   test("in") {
-    val result = PlaygroundUtil.in(main, dict, "index").orderBy("index")
-    val expected = spark.createDataFrame(
-      sc.parallelize(
-        Seq(
-          Row("a", "Berlin"),
-          Row("b", "Madrid"),
-        )
-      ),
-      new StructType()
-        .add(StructField("index", StringType))
-        .add(StructField("city", StringType))
-    ).orderBy("index")
+    val result = main.join(dict, Seq("index"), "left_semi")
+    val expected = createDataDataset(Seq(Data("a", "Berlin"), Data("b", "Madrid"))).orderBy("index")
 
     assert(result.schema === expected.schema)
-    assert(result.collect() === expected.collect())
+    assert(result.collect() === expected.toDF().collect())
   }
 
   test("not in") {
-    val result = PlaygroundUtil.notIn(main, dict, "index").orderBy("index")
-    val expected = spark.createDataFrame(
-      sc.parallelize(
-        Seq(
-          Row("c", "Rome"),
-        )
-      ),
-      new StructType()
-        .add(StructField("index", StringType))
-        .add(StructField("city", StringType))
-    ).orderBy("index")
+    val result = main.join(dict, Seq("index"), "left_anti")
+    val expected = createDataDataset(Seq(Data("c", "Rome"))).orderBy("index")
 
     assert(result.schema === expected.schema)
-    assert(result.collect() === expected.collect())
+    assert(result.collect() === expected.toDF().collect())
   }
 
   test("semi vs inner") {
-    val dictWithDuplicates = spark.createDataFrame(
-      sc.parallelize(
-        Seq(
-          Row("a"),
-          Row("b"),
-          Row("b"),
-        )
-      ),
-      new StructType()
-        .add(StructField("index", StringType))
-    )
+    val dictWithDuplicates = createDictDataset(Seq(Dict("a"), Dict("b"), Dict("b")))
     val result = main.join(dictWithDuplicates, Seq("index"), "inner").orderBy("index")
-    val expected = spark.createDataFrame(
-      sc.parallelize(
-        Seq(
-          Row("a", "Berlin"),
-          Row("b", "Madrid"),
-          Row("b", "Madrid"),
-        )
-      ),
-      new StructType()
-        .add(StructField("index", StringType))
-        .add(StructField("city", StringType))
-    ).orderBy("index")
+    val expected = createDataDataset(Seq(Data("a", "Berlin"), Data("b", "Madrid"), Data("b", "Madrid"))).orderBy("index")
 
     assert(result.schema === expected.schema)
-    assert(result.collect() === expected.collect())
+    assert(result.collect() === expected.toDF().collect())
   }
 }
